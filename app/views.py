@@ -6,11 +6,19 @@ from .models import User
 from datetime import datetime
 from forms import SearchForm
 from config import MAX_SEARCH_RESULTS
+from app import babel
+from config import LANGUAGES
+from flask.ext.babel import gettext
+from guess_language import guessLanguage
 
+@babel.localeselector
+def get_locale():
+    return request.accept_languages.best_match(LANGUAGES.keys())
 
 @lm.user_loader
 def load_user(id):
     return User.query.get(int(id))
+
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -20,12 +28,18 @@ def load_user(id):
 def index(page=1):
     form = PostForm()
     if form.validate_on_submit():
-        post = Post(body=form.post.data, timestamp=datetime.utcnow(), author=g.user)
+        language = guessLanguage(form.post.data)
+        if language == 'UNKNOWN' or len(language) > 5:
+            language = ''
+        post = Post(body=form.post.data,
+                    timestamp=datetime.utcnow(),
+                    author=g.user,
+                    language=language)
         db.session.add(post)
         db.session.commit()
-        flash('Your post is now live!')
+        flash(gettext('Your post is now live!'))
         return redirect(url_for('index'))
-    posts = g.user.followed_posts().paginate(page, POSTS_PER_PAGE, False).items
+    posts = g.user.followed_posts().paginate(page, POSTS_PER_PAGE, False)
     return render_template('index.html',
                            title='Home',
                            form=form,
@@ -46,8 +60,21 @@ def login():
                            providers=app.config['OPENID_PROVIDERS'])
 
 
+@app.before_request
+def before_request():
+    g.user = current_user
+    if g.user.is_authenticated:
+        g.user.last_seen = datetime.utcnow()
+        db.session.add(g.user)
+        db.session.commit()
+        g.search_form = SearchForm()
+    g.locale = get_locale()
+
 @oid.after_login
 def after_login(resp):
+        nickname = User.make_valid_nickname(nickname)
+    nickname = User.make_unique_nickname(nickname)
+    user = User(nickname=nickname, email=resp.email)
     if resp.email is None or resp.email == "":
         flash('Invalid login. Please try again.')
         return redirect(url_for('login'))
@@ -66,6 +93,9 @@ def after_login(resp):
         session.pop('remember_me', None)
     login_user(user, remember = remember_me)
     return redirect(request.args.get('next') or url_for('index'))
+    if resp.email is None or resp.email == "":
+        flash(gettext('Invalid login. Please try again.'))
+        redirect(url_for('login'))
 
 @app.before_request
 def before_request():
@@ -207,6 +237,20 @@ def logout():
     logout_user()
     return redirect(url_for('index'))
 
+@app.route('/delete/<int:id>')
+@login_required
+def delete(id):
+    post = Post.query.get(id)
+    if post is None:
+        flash('Post not found.')
+        return redirect(url_for('index'))
+    if post.author.id != g.user.id:
+        flash('You cannot delete this post.')
+        return redirect(url_for('index'))
+    db.session.delete(post)
+    db.session.commit()
+    flash('Your post has been deleted.')
+    return redirect(url_for('index'))
 
 @app.errorhandler(404)
 def not_found_error(error):

@@ -4,6 +4,13 @@ WTF_CSRF_ENABLED = True
 SECRET_KEY = 'you-will-never-guess'
 basedir = os.path.abspath(os.path.dirname(__file__))
 
+MS_TRANSLATOR_CLIENT_ID = '' # enter your MS translator app id here
+MS_TRANSLATOR_CLIENT_SECRET = '' # enter your MS translator app secret here
+
+LANGUAGES = {
+    'en': 'English',
+    'es': 'Español'
+}
 # mail server settings
 MAIL_SERVER = 'smtp.googlemail.com'
 MAIL_PORT = 465
